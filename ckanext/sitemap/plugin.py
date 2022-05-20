@@ -2,14 +2,59 @@
 Sitemap plugin for CKAN
 '''
 
-from ckan.plugins import implements, SingletonPlugin
-from ckan.plugins import IRoutes
+import ckan.plugins as p
 
-class SitemapPlugin(SingletonPlugin):
-    implements(IRoutes, inherit=True)
+from ckan.plugins.toolkit import config, url_for
+from ckan.model import Session, Package
+from flask import Blueprint, make_response
 
-    def before_map(self, map):
-        controller='ckanext.sitemap.controller:SitemapController'
-        map.connect('sitemap', '/sitemap.xml', controller=controller, action='view')
-        return map
+from lxml import etree
+from datetime import date
+import logging
+
+
+SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+XHTML_NS = "http://www.w3.org/1999/xhtml"
+
+log = logging.getLogger(__file__)
+
+
+def render_sitemap():
+    site_url = config.get('ckan.site_url')
+    pkgs = Session.query(Package).filter(Package.type == 'dataset').filter(Package.private != True). \
+        filter(Package.state == 'active').all()
+    log.debug(pkgs)
+    root = etree.Element("urlset", nsmap={None: SITEMAP_NS, 'xhtml': XHTML_NS})
+    for pkg in pkgs:
+        url = etree.SubElement(root, 'url')
+        loc = etree.SubElement(url, 'loc')
+        pkg_url = url_for('dataset.read', id=pkg.name)
+        loc.text = site_url + pkg_url
+        lastmod = etree.SubElement(url, 'lastmod')
+        lastmod.text = pkg.metadata_modified.strftime('%Y-%m-%d')
+
+    # Add XML header
+    content = etree.tostring(root, pretty_print=True, encoding='unicode')
+    content = '<?xml version="1.0" encoding="UTF-8"?>\n' + content
+    headers = {'Content-Type': 'application/xml; charset=utf-8'}
+    return make_response((content, 200, headers))
+
+
+def testme():
+    content = 'Test Me'
+    headers = {'Content-Type': 'text/html; charset=utf-8'}
+    return make_response((content, 200, headers))
+
+
+class SitemapPlugin(p.SingletonPlugin):
+    p.implements(p.IBlueprint)
+
+    def get_blueprint(self):
+        blueprint = Blueprint("sitemap", self.__module__)
+        blueprint.add_url_rule("/sitemap.xml", view_func=render_sitemap)
+
+        # Use this to debug routes
+        #blueprint.add_url_rule("/testme", view_func=testme)
+        return blueprint
         
