@@ -30,10 +30,12 @@ def render_pure():
     xmlschema_doc = etree.parse(schema_file)
     xmlschema = etree.XMLSchema(xmlschema_doc)
 
-    log.error("Hello")
     pkgs = Session.query(Package).filter(Package.type == 'dataset').filter(Package.private != True). \
         filter(Package.state == 'active').all()
-    log.debug(pkgs)
+
+    # Whether to add extra elements.
+    ADD_EXTRA_ELEMENTS = True
+
     root = etree.Element(PURE + "datasets", nsmap={'v1': PURE_NS, 'v3': PURE_CMNS})
     for pkg in pkgs:
         #log.error(pkg.as_dict())
@@ -47,22 +49,45 @@ def render_pure():
         description = etree.SubElement(dataset, PURE + 'description')
         description.text = pkg.notes
 
+        # Temporal Coverage:  Use only if it's defined
+        extentRange = h.getExtrasValue(pkg, 'extent_range')
+        if extentRange and ADD_EXTRA_ELEMENTS:
+            (startDate, endDate) = h.getExtentParts(extentRange)
+            temporalCoverage = etree.SubElement(dataset, PURE + 'temporalCoverage')
+            start = etree.SubElement(temporalCoverage, PURE + 'from')
+            fillDateFields(start, startDate)
+            end = etree.SubElement(temporalCoverage, PURE + 'to')
+            fillDateFields(end, endDate)
+
+        # Geolocation:  We have to specify a polygon in Google Maps format.
+        # Example would be nice; punt for now.
+
+        # Persons: For now, we just populate with authors.
+        if ADD_EXTRA_ELEMENTS:
+            authors = h.getExtrasValue(pkg, 'harvest-author')
+            authors = json.loads(authors)
+            persons = etree.SubElement(dataset, PURE + 'persons')
+            for author in authors:
+                person = etree.SubElement(persons, PURE + 'person', attrib={"id": author})
+                personInner = etree.SubElement(person, PURE + 'person', attrib={"lookupId": author})
+                # As a first pass, we put the entire author name into the "firstName" field.
+                # personParts = h.getPersonParts(author)
+                firstName = etree.SubElement(personInner, PURE + 'firstName')
+                firstName.text = author
+                role = etree.SubElement(person, PURE + 'role')
+                role.text = 'creator'
+
         # DOI
         resource_url = h.getExtrasValue(pkg, 'resource-url')
         if h.isDOI(resource_url):
             doi = etree.SubElement(dataset, PURE + 'DOI')
             doi.text = h.getDOISuffix(resource_url)
 
-        # Available Date
+        # Available Date:  Could be just year, or year+month
         pubDate = h.getExtrasValue(pkg, 'publication_date')
-        dateParts = h.getDateComponents(pubDate)
+        dateParts = h.getDateParts(pubDate)
         availDate = etree.SubElement(dataset, PURE + 'availableDate')
-        year = etree.SubElement(availDate, CMNS + 'year')
-        year.text = dateParts[0]
-        month = etree.SubElement(availDate, CMNS + 'month')
-        month.text = dateParts[1]
-        day = etree.SubElement(availDate, CMNS + 'day')
-        day.text = dateParts[2]
+        fillDateFields(availDate, dateParts)
 
         # Managing Organization
         managingOrg = h.getExtrasValue(pkg, 'resource-support-organization')
@@ -70,10 +95,21 @@ def render_pure():
             managingOrg = pkg.organization['name']
         org = etree.SubElement(dataset, PURE + 'managingOrganisation', attrib={'lookupId': managingOrg})
 
-        # Publisher
-        publisher = h.getExtrasValue(pkg, 'publisher-standard')
-        publisher = json.loads(publisher)[0]
+        # Publisher: Pure accepts only one publisher, so use the first one.
+        publishers = h.getExtrasValue(pkg, 'publisher-standard')
+        publisher = json.loads(publishers)[0]
         org = etree.SubElement(dataset, PURE + 'publisher', attrib={'lookupId': publisher})
+
+        # Link to resource homepage
+        if ADD_EXTRA_ELEMENTS:
+            links = etree.SubElement(dataset, PURE + 'links')
+            link = etree.SubElement(links, PURE + 'link', attrib={'id': resource_url})
+            description = etree.SubElement(link, PURE + 'description')
+            descriptionText = etree.SubElement(description, CMNS + 'text')
+            descriptionText.text = 'Resource Download Homepage'
+            url = etree.SubElement(link, PURE + 'url')
+            url.text = resource_url
+
 
 
     content = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='utf-8')
@@ -83,6 +119,17 @@ def render_pure():
     # Add XML header
     headers = {'Content-Type': 'application/xml; charset=utf-8'}
     return make_response((content, 200, headers))
+
+
+def fillDateFields(element, dateParts):
+    year = etree.SubElement(element, CMNS + 'year')
+    year.text = dateParts[0]
+    if len(dateParts) > 1:
+        month = etree.SubElement(element, CMNS + 'month')
+        month.text = dateParts[1]
+    if len(dateParts) > 2:
+        day = etree.SubElement(element, CMNS + 'day')
+        day.text = dateParts[2]
 
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -116,50 +163,18 @@ def testme():
     headers = {'Content-Type': 'text/html; charset=utf-8'}
     return make_response((content, 200, headers))
 
-def render_commons():
-    f = open('/usr/lib/ckan/default/src/ckanext-sitemap/ckanext/sitemap/commons.xsd')
-    content = f.read()
-    headers = {'Content-Type': 'text/html; charset=utf-8'}
-    return make_response((content, 200, headers))
-
-def render_dataset():
-    f = open('/usr/lib/ckan/default/src/ckanext-sitemap/ckanext/sitemap/dataset.xsd')
-    content = f.read()
-    headers = {'Content-Type': 'text/html; charset=utf-8'}
-    return make_response((content, 200, headers))
-
 
 class SitemapPlugin(p.SingletonPlugin):
     p.implements(p.IBlueprint)
-    #p.implements(p.ITemplateHelpers)
 
     def get_blueprint(self):
         blueprint = Blueprint("sitemap", self.__module__)
         blueprint.add_url_rule("/sitemap.xml", view_func=render_sitemap)
         blueprint.add_url_rule("/pure.xml", view_func=render_pure)
-        blueprint.add_url_rule("/commons.xsd", view_func=render_commons)
-        blueprint.add_url_rule("/dataset.xsd", view_func=render_dataset)
+        #blueprint.add_url_rule("/commons.xsd", view_func=render_commons)
+        #blueprint.add_url_rule("/dataset.xsd", view_func=render_dataset)
 
         # Use this to debug routes
         #blueprint.add_url_rule("/testme", view_func=testme)
         return blueprint
         
-#     ## ITemplateHelpers
-#
-#     def get_helpers(self):
-#
-#         function_names = (
-#             'getExtrasValue',
-#             'isDOI',
-#         )
-#         return _get_module_functions(helpers, function_names)
-#
-#
-# def _get_module_functions(module, function_names):
-#     """ Reformat helper function names for get_helpers()
-#     """
-#     functions = {}
-#     for f in function_names:
-#         functions[f] = module.__dict__[f]
-#
-#     return functions

@@ -1,4 +1,5 @@
 
+from datetime import *
 
 ## Debug
 #import pydevd_pycharm
@@ -26,7 +27,30 @@ def getDOISuffix(urlString):
     suffix = urlString.split('doi.org/', 1)[1]
     return suffix
 
-def getDateComponents(iso_date):
+def getDateParts(iso_date):
     date = iso_date.split('T')[0]
     components = date.split('-')
     return components
+
+def getExtentParts(extent):
+    """ Parse Solr date range with format similar to "[1992-11-01 TO 1993-02-28]"
+        Sometimes the second value is '*', which means "Now" in Solr
+    """
+    dates = extent[1:-1].split(' TO ')
+    startDate = dates[0].split('-')
+    if dates[1] == '*':
+        iso_date = datetime.now().isoformat()
+        date = iso_date.split('T')[0]
+        endDate = date.split('-')
+    else:
+        endDate = dates[1].split('-')
+    return (startDate, endDate)
+
+
+def getPersonParts(author):
+    """ Try to split compound names into firstName and lastName.
+        If the name is too complex, place everything in firstName.
+    """
+    parts = None
+    # Most specific case is finding a single comma.
+    split1 = parts.split(',')
