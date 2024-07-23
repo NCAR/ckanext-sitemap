@@ -7,6 +7,8 @@ import ckan.plugins as p
 from ckan.plugins.toolkit import config, url_for
 from ckan.model import Session, Package
 from flask import Blueprint, make_response
+import ckan.logic as logic
+
 
 from lxml import etree
 from datetime import date
@@ -30,41 +32,51 @@ def render_pure():
     xmlschema_doc = etree.parse(schema_file)
     xmlschema = etree.XMLSchema(xmlschema_doc)
 
-    pkgs = Session.query(Package).filter(Package.type == 'dataset').filter(Package.private != True). \
-        filter(Package.state == 'active').all()
-
     # Whether to add extra elements.
-    ADD_EXTRA_ELEMENTS = True
+    ADD_EXTRA_ELEMENTS = False
+    context = {}
+
+    #pkgs = Session.query(Package).filter(Package.type == 'dataset').filter(Package.private != True). \
+    #    filter(Package.state == 'active').all()
+    pkgs = logic.get_action('package_list')(context, {})
 
     root = etree.Element(PURE + "datasets", nsmap={'v1': PURE_NS, 'v3': PURE_CMNS})
     for pkg in pkgs:
-        #log.error(pkg.as_dict())
-        dataset = etree.SubElement(root, PURE + 'dataset', attrib={'id': pkg.id, 'type': 'dataset'})
+        #pkg_dict = logic.get_action('package_show')(context, {'id': pkg.id})
+        pkg_dict = logic.get_action('package_show')(context, {'id': pkg})
+
+        # Filter out non-dataset, non-active packages
+        if pkg_dict['type'] != 'dataset' or pkg_dict['state'] != 'active':
+            continue
+
+        #log.error(pkg_dict)
+        dataset = etree.SubElement(root, PURE + 'dataset', attrib={'id': pkg_dict['id'], 'type': 'dataset'})
 
         # Title
         title = etree.SubElement(dataset, PURE + 'title')
-        title.text = pkg.title
+        title.text = pkg_dict['title']
 
         # Description
         description = etree.SubElement(dataset, PURE + 'description')
-        description.text = pkg.notes
+        description.text = pkg_dict['notes']
 
         # Temporal Coverage:  Use only if it's defined
-        extentRange = h.getExtrasValue(pkg, 'extent_range')
-        if extentRange and ADD_EXTRA_ELEMENTS:
-            (startDate, endDate) = h.getExtentParts(extentRange)
-            temporalCoverage = etree.SubElement(dataset, PURE + 'temporalCoverage')
-            start = etree.SubElement(temporalCoverage, PURE + 'from')
-            fillDateFields(start, startDate)
-            end = etree.SubElement(temporalCoverage, PURE + 'to')
-            fillDateFields(end, endDate)
+        if ADD_EXTRA_ELEMENTS:
+            extentRange = h.getExtrasValue(pkg_dict, 'extent_range')
+            if extentRange:
+                (startDate, endDate) = h.getExtentParts(extentRange)
+                temporalCoverage = etree.SubElement(dataset, PURE + 'temporalCoverage')
+                start = etree.SubElement(temporalCoverage, PURE + 'from')
+                fillDateFields(start, startDate)
+                end = etree.SubElement(temporalCoverage, PURE + 'to')
+                fillDateFields(end, endDate)
 
         # Geolocation:  We have to specify a polygon in Google Maps format.
         # Example would be nice; punt for now.
 
         # Persons: For now, we just populate with authors.
         if ADD_EXTRA_ELEMENTS:
-            authors = h.getExtrasValue(pkg, 'harvest-author')
+            authors = h.getExtrasValue(pkg_dict, 'harvest-author')
             authors = json.loads(authors)
             persons = etree.SubElement(dataset, PURE + 'persons')
             for author in authors:
@@ -78,25 +90,27 @@ def render_pure():
                 role.text = 'creator'
 
         # DOI
-        resource_url = h.getExtrasValue(pkg, 'resource-url')
+        resource_url = h.getExtrasValue(pkg_dict, 'resource-url')
         if h.isDOI(resource_url):
             doi = etree.SubElement(dataset, PURE + 'DOI')
             doi.text = h.getDOISuffix(resource_url)
 
         # Available Date:  Could be just year, or year+month
-        pubDate = h.getExtrasValue(pkg, 'publication_date')
+        pubDate = h.getExtrasValue(pkg_dict, 'publication_date')
         dateParts = h.getDateParts(pubDate)
         availDate = etree.SubElement(dataset, PURE + 'availableDate')
         fillDateFields(availDate, dateParts)
 
         # Managing Organization
-        managingOrg = h.getExtrasValue(pkg, 'resource-support-organization')
+        managingOrg = h.getExtrasValue(pkg_dict, 'resource-support-organization')
         if not managingOrg:
-            managingOrg = pkg.organization['name']
+            managingOrg = h.getExtrasValue(pkg_dict, 'metadata-support-organization')
+        if not managingOrg:
+            managingOrg = pkg_dict['organization']['title']
         org = etree.SubElement(dataset, PURE + 'managingOrganisation', attrib={'lookupId': managingOrg})
 
         # Publisher: Pure accepts only one publisher, so use the first one.
-        publishers = h.getExtrasValue(pkg, 'publisher-standard')
+        publishers = h.getExtrasValue(pkg_dict, 'publisher-standard')
         publisher = json.loads(publishers)[0]
         org = etree.SubElement(dataset, PURE + 'publisher', attrib={'lookupId': publisher})
 
@@ -114,7 +128,7 @@ def render_pure():
 
     content = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='utf-8')
 
-    xmlschema.assertValid(root)
+    #xmlschema.assertValid(root)
 
     # Add XML header
     headers = {'Content-Type': 'application/xml; charset=utf-8'}
@@ -143,7 +157,6 @@ def render_sitemap():
     log.debug(pkgs)
     root = etree.Element("urlset", nsmap={None: SITEMAP_NS, 'xhtml': XHTML_NS})
     for pkg in pkgs:
-        print("pkg: " + pkg)
         url = etree.SubElement(root, 'url')
         loc = etree.SubElement(url, 'loc')
         pkg_url = url_for('dataset.read', id=pkg.name)

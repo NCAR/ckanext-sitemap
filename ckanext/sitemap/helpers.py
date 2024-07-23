@@ -5,13 +5,23 @@ from datetime import *
 #import pydevd_pycharm
 #pydevd_pycharm.settrace('localhost', port=6666, stdoutToServer=True, stderrToServer=True, suspend=False)
 
-def getExtrasValue(package, key):
+def getExtrasValueOld(package, key):
     """ Return the value associated with the given key in the package extras list.
         If the given key is not in the list, return None.
     """
     as_dict = package.as_dict()
     extras = as_dict['extras']
     returnValue = extras.get(key, None)
+    return returnValue
+
+def getExtrasValue(pkg_dict, key):
+    """ Return the value associated with the given key in the package extras list.
+        If the given key is not in the list, return None.
+    """
+    returnValue = None
+    for extra in pkg_dict['extras']:
+        if extra['key'] == key:
+            returnValue = extra['value']
     return returnValue
 
 def isDOI(urlString):
