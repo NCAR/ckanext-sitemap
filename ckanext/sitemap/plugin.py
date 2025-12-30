@@ -16,8 +16,9 @@ import logging
 
 
 def render_pure():
-    APP_DIR = '/app'
-    # Consider adding validation here
+    # Use docker-based home directory for CKAN
+    APP_DIR = '/srv/app'
+
     pure_file = APP_DIR + '/pure.xml'
     f = open(pure_file, "r")
     content = f.read()
@@ -66,8 +67,6 @@ class SitemapPlugin(p.SingletonPlugin):
         blueprint = Blueprint("sitemap", self.__module__)
         blueprint.add_url_rule("/sitemap.xml", view_func=render_sitemap)
         blueprint.add_url_rule("/pure.xml", view_func=render_pure)
-        #blueprint.add_url_rule("/commons.xsd", view_func=render_commons)
-        #blueprint.add_url_rule("/dataset.xsd", view_func=render_dataset)
 
         # Use this to debug routes
         #blueprint.add_url_rule("/testme", view_func=testme)
