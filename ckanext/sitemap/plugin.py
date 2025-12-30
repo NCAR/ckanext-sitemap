@@ -16,8 +16,9 @@ import logging
 
 
 def render_pure():
+    APP_DIR = '/app'
     # Consider adding validation here
-    pure_file = '/usr/lib/ckan/PURE_OUTPUT/pure.xml'
+    pure_file = APP_DIR + '/pure.xml'
     f = open(pure_file, "r")
     content = f.read()
 
