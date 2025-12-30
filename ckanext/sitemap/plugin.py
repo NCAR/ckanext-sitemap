@@ -12,7 +12,7 @@ from flask import Blueprint, make_response
 from lxml import etree
 
 import logging
-
+log = logging.getLogger(__file__)
 
 
 def render_pure():
