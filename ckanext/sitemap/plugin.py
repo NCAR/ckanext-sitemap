@@ -8,17 +8,30 @@ from ckan.plugins.toolkit import config, url_for
 from ckan.model import Session, Package
 from flask import Blueprint, make_response
 
+
 from lxml import etree
-from datetime import date
+
 import logging
+log = logging.getLogger(__file__)
+
+
+def render_pure():
+    # Use docker-based home directory for CKAN
+    APP_DIR = '/srv/app'
+
+    pure_file = APP_DIR + '/pure.xml'
+    f = open(pure_file, "r")
+    content = f.read()
+
+    # Add XML header
+    headers = {'Content-Type': 'application/xml; charset=utf-8'}
+    return make_response((content, 200, headers))
+
 
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
-
-log = logging.getLogger(__file__)
-
 
 def render_sitemap():
     site_url = config.get('ckan.site_url')
@@ -53,6 +66,7 @@ class SitemapPlugin(p.SingletonPlugin):
     def get_blueprint(self):
         blueprint = Blueprint("sitemap", self.__module__)
         blueprint.add_url_rule("/sitemap.xml", view_func=render_sitemap)
+        blueprint.add_url_rule("/pure.xml", view_func=render_pure)
 
         # Use this to debug routes
         #blueprint.add_url_rule("/testme", view_func=testme)
