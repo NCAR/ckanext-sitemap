@@ -14,12 +14,12 @@ from lxml import etree
 import logging
 log = logging.getLogger(__file__)
 
+APP_DIR = '/srv/app'
 
-def render_pure():
+def render_pure_staging():
     # Use docker-based home directory for CKAN
-    APP_DIR = '/srv/app'
 
-    pure_file = APP_DIR + '/pure.xml'
+    pure_file = APP_DIR + '/pure-staging.xml'
     f = open(pure_file, "r")
     content = f.read()
 
@@ -27,6 +27,17 @@ def render_pure():
     headers = {'Content-Type': 'application/xml; charset=utf-8'}
     return make_response((content, 200, headers))
 
+
+def render_pure_production():
+    # Use docker-based home directory for CKAN
+
+    pure_file = APP_DIR + '/pure-production.xml'
+    f = open(pure_file, "r")
+    content = f.read()
+
+    # Add XML header
+    headers = {'Content-Type': 'application/xml; charset=utf-8'}
+    return make_response((content, 200, headers))
 
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -66,7 +77,8 @@ class SitemapPlugin(p.SingletonPlugin):
     def get_blueprint(self):
         blueprint = Blueprint("sitemap", self.__module__)
         blueprint.add_url_rule("/sitemap.xml", view_func=render_sitemap)
-        blueprint.add_url_rule("/pure.xml", view_func=render_pure)
+        blueprint.add_url_rule("/pure-staging.xml", view_func=render_pure_staging)
+        blueprint.add_url_rule("/pure-production.xml", view_func=render_pure_production)
 
         # Use this to debug routes
         #blueprint.add_url_rule("/testme", view_func=testme)
